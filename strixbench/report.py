@@ -51,11 +51,10 @@ def render(results_dir: Path) -> str:
         lines += ["## Stacks", ""]
         for fid, fp in fps.items():
             lines.append(
-                f"- **`{fid}`** — {fp.get('gpu_name','?')} ({fp.get('gfx_target','?')}), "
+                f"- **`{fid}`** — {fp.get('gpu_name') or '?'} ({fp.get('gfx_target','?')}), "
                 f"kernel {fp.get('kernel','?')}, ROCm {fp.get('rocm_version') or '—'}, "
                 f"{fp.get('mesa_radv_version') or 'RADV ?'}, "
-                f"GTT {_fmt(fp.get('gtt_total_gb'),' GB')} / "
-                f"VRAM {_fmt(fp.get('vram_total_gb'),' GB')}"
+                f"{_fmt(fp.get('unified_total_gb'),' GB')} unified"
             )
         lines.append("")
 

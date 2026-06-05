@@ -7,6 +7,7 @@ between system RAM and GPU GTT/VRAM. This module gathers all of that, best-effor
 
 from __future__ import annotations
 
+import glob
 import hashlib
 import json
 import platform
@@ -28,9 +29,10 @@ class Fingerprint:
     rocm_version: str = ""
     mesa_radv_version: str = ""    # Vulkan backend version
     amdgpu_driver: str = ""
-    mem_total_gb: float | None = None
-    gtt_total_gb: float | None = None   # how much unified mem the GPU can address
-    vram_total_gb: float | None = None  # carved-out "dedicated" portion
+    mem_total_gb: float | None = None       # system RAM the OS sees (a slice of the pool)
+    gtt_total_gb: float | None = None        # GTT: how much of the pool the GPU can address
+    vram_total_gb: float | None = None       # GPU "VRAM" ceiling (overlaps the same pool)
+    unified_total_gb: float | None = None    # physical unified capacity (pools overlap, so max — not sum)
     npu_present: bool = False
     bios_version: str = ""
     extra: dict = field(default_factory=dict)
@@ -74,18 +76,20 @@ def _gfx_target() -> str:
 
 
 def _gpu_name() -> str:
-    # Prefer rocm-smi product name; fall back to the DRM card name.
-    out = run(["rocm-smi", "--showproductname", "--json"])
-    if out:
-        try:
-            data = json.loads(out)
-            for card in data.values():
-                name = card.get("Card series") or card.get("Card model")
-                if name:
-                    return str(name)
-        except (json.JSONDecodeError, AttributeError):
-            pass
-    return read_text("/sys/class/drm/card0/device/product_name") or ""
+    # rocminfo "Marketing Name" is the most reliable; there's one per agent (CPU + GPU),
+    # so pick the one that isn't the CPU model.
+    out = run(["rocminfo"]) or ""
+    cpu_model = _cpu()[0].strip()
+    for name in re.findall(r"Marketing Name:\s*(.+)", out):
+        name = name.strip()
+        if name and name != cpu_model:
+            return name
+    # Fall back to rocm-smi product name (text or json form).
+    smi = run(["rocm-smi", "--showproductname"]) or ""
+    m = re.search(r"Card (?:Series|Model|series|model)\s*:?\s*(.+)", smi)
+    if m:
+        return m.group(1).strip()
+    return ""
 
 
 def _rocm_version() -> str:
@@ -104,18 +108,39 @@ def _radv_version() -> str:
 
 def _amdgpu_driver() -> str:
     ver = read_text("/sys/module/amdgpu/version")
-    return ver or ""
+    if ver:
+        return ver
+    # amdgpu is often built-in (no /sys/module/.../version); ask modinfo.
+    return run(["modinfo", "-F", "version", "amdgpu"]) or ""
 
 
 def _gtt_vram_gb() -> tuple[float | None, float | None]:
-    # amdgpu exposes pool sizes via debugfs/sysfs; sizes are in bytes.
-    def gb(p: str) -> float | None:
-        v = read_int(p)
+    """Return (gtt_gb, vram_gb). The card index isn't always 0, so scan all cards;
+    fall back to rocm-smi when sysfs nodes are absent."""
+    def gb(v: int | None) -> float | None:
         return round(v / 1024 ** 3, 1) if v else None
 
-    gtt = gb("/sys/class/drm/card0/device/mem_info_gtt_total")
-    vram = gb("/sys/class/drm/card0/device/mem_info_vram_total")
-    return gtt, vram
+    gtt = vram = None
+    for dev in sorted(glob.glob("/sys/class/drm/card*/device")):
+        v = read_int(f"{dev}/mem_info_vram_total")
+        g = read_int(f"{dev}/mem_info_gtt_total")
+        if v and (vram is None or v > vram):
+            vram = v
+        if g and (gtt is None or g > gtt):
+            gtt = g
+
+    if vram is None:  # rocm-smi fallback
+        out = run(["rocm-smi", "--showmeminfo", "vram", "--json"])
+        if out:
+            try:
+                for card in json.loads(out).values():
+                    for k, val in card.items():
+                        if "VRAM Total Memory" in k:
+                            vram = int(val)
+            except (json.JSONDecodeError, AttributeError, ValueError, TypeError):
+                pass
+
+    return gb(gtt), gb(vram)
 
 
 def _npu_present() -> bool:
@@ -130,9 +155,27 @@ def _bios_version() -> str:
     return read_text("/sys/class/dmi/id/bios_version") or ""
 
 
+def _dmidecode_total_gb() -> float | None:
+    """Exact installed memory from dmidecode (needs root; returns None otherwise)."""
+    out = run(["dmidecode", "-t", "memory"])
+    if not out:
+        return None
+    total_mb = 0
+    for m in re.finditer(r"Size:\s*(\d+)\s*(MB|GB)", out):
+        val = int(m.group(1))
+        total_mb += val * 1024 if m.group(2) == "GB" else val
+    return round(total_mb / 1024, 1) if total_mb else None
+
+
 def collect() -> Fingerprint:
     cpu_model, cpu_cores = _cpu()
     gtt, vram = _gtt_vram_gb()
+    mem = _mem_total_gb()
+    # System RAM, GTT, and VRAM all draw from ONE physical pool — they overlap.
+    # The real capacity is the largest pool, not their sum (dmidecode gives the exact
+    # installed total when run as root; max() is the honest no-root proxy).
+    pools = [p for p in (mem, gtt, vram, _dmidecode_total_gb()) if p]
+    unified = max(pools) if pools else None
     return Fingerprint(
         host=platform.node(),
         os=read_text("/etc/os-release") and _pretty_os() or platform.platform(),
@@ -144,9 +187,10 @@ def collect() -> Fingerprint:
         rocm_version=_rocm_version(),
         mesa_radv_version=_radv_version(),
         amdgpu_driver=_amdgpu_driver(),
-        mem_total_gb=_mem_total_gb(),
+        mem_total_gb=mem,
         gtt_total_gb=gtt,
         vram_total_gb=vram,
+        unified_total_gb=unified,
         npu_present=_npu_present(),
         bios_version=_bios_version(),
     )
