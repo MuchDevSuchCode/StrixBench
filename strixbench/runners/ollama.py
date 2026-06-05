@@ -38,8 +38,13 @@ class OllamaRunner:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            # Surface the server's actual error (e.g. "model requires more system memory")
+            body = e.read().decode(errors="replace").strip()[:600]
+            raise RuntimeError(f"ollama {path} HTTP {e.code}: {body}") from None
 
     def available(self) -> bool:
         try:
@@ -52,7 +57,7 @@ class OllamaRunner:
     def _show(self, tag: str) -> dict:
         try:
             return self._post("/api/show", {"model": tag}, timeout=30)
-        except (urllib.error.URLError, OSError, ValueError):
+        except (urllib.error.URLError, OSError, ValueError, RuntimeError):
             return {}
 
     def run_model(self, model: dict, defaults: dict, fingerprint_id: str,

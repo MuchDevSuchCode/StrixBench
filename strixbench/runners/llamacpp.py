@@ -58,6 +58,7 @@ class LlamaCppRunner:
         n_threads = model.get("n_threads", defaults.get("n_threads"))
         reps = model.get("reps", defaults.get("reps", 3))
 
+        # NOTE: llama-bench has no -c/--ctx-size; context is sized from -p + -n.
         cmd = [
             self.binary,
             "-m", path,
@@ -65,7 +66,6 @@ class LlamaCppRunner:
             "-n", str(n_gen),
             "-ngl", str(n_gpu_layers),
             "-b", str(n_batch),
-            "-c", str(n_ctx),
             "-r", str(reps),
             "-o", "json",
         ]
