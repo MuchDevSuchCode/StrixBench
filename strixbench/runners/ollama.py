@@ -77,7 +77,11 @@ class OllamaRunner:
         if n_threads:
             options["num_thread"] = n_threads
 
-        payload = {"model": tag, "prompt": _PROMPT, "stream": False, "options": options}
+        # keep_alive=0 unloads the model right after this request, so the next
+        # benchmark (possibly a different engine) starts from a clean memory state
+        # instead of contending with a model Ollama would otherwise hold for ~5 min.
+        payload = {"model": tag, "prompt": _PROMPT, "stream": False,
+                   "keep_alive": 0, "options": options}
 
         with PowerSampler() as sampler:
             resp = self._post("/api/generate", payload)
