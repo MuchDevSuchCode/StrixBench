@@ -1,43 +1,59 @@
-# StrixBench model config. Copy to configs/models.toml and edit paths.
+# StrixBench model config. Copy to configs/models.toml and fix the paths/tags.
 #
 #   cp configs/models.example.toml configs/models.toml
-#   python -m strixbench run --config configs/models.toml
+#   # discover exact files + tags:
+#   find ~/models -name '*.gguf'      # llama.cpp paths (point at the *first* shard if split)
+#   ollama list                        # ollama tags
+#   python3 -m strixbench run --config configs/models.toml
 
-engine = "llama.cpp"
+engine = "llama.cpp"   # default engine; each [[models]] entry may override with engine = "ollama"
 
-# Optional: point at a specific llama-bench binary (otherwise found on PATH).
-# [engine_opts]
-# binary = "/home/engineer/llama.cpp/build/bin/llama-bench"
+# Per-engine options.
+[runners."llama.cpp"]
+# binary = "/home/ai/llama.cpp/build/bin/llama-bench"   # uncomment if not on PATH
+[runners.ollama]
+host = "http://127.0.0.1:11434"
 
 # Applied to every model unless overridden per-model.
 [defaults]
-backend = "vulkan"     # label only; build llama.cpp with the backend you want to test
+backend = "vulkan"     # label only; reflects how YOUR llama.cpp was built (vulkan vs rocm)
 n_ctx = 4096
 n_prompt = 512         # prefill tokens to time
 n_gen = 128            # decode tokens to time
-n_gpu_layers = 999     # offload everything to the iGPU (unified mem makes this cheap)
+n_gpu_layers = 999     # offload everything (unified memory makes this free)
 n_batch = 2048
 reps = 3
 
-# --- Models to benchmark -------------------------------------------------------
-# Add one [[models]] block per GGUF. The headline test for this box is a big MoE.
+# --- llama.cpp: native GGUF paths ---------------------------------------------
+# NOTE: fix each path to the actual .gguf inside the dir. For split models, point at
+# the first shard (e.g. ...-00001-of-0000N.gguf) — llama.cpp loads the rest.
 
+# The headliner: a small-active MoE (26B total / ~4B active) — the Strix Halo sweet spot.
 [[models]]
-name = "Llama-3.1-8B-Instruct"
-path = "/home/engineer/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf"
-quant = "Q4_K_M"
-
-# Dense 70B — fits easily in 128 GB; expect ~6 tok/s decode (bandwidth bound).
-[[models]]
-name = "Llama-3.3-70B-Instruct"
-path = "/home/engineer/models/Llama-3.3-70B-Instruct-Q4_K_M.gguf"
-quant = "Q4_K_M"
-
-# The headliner: a big MoE that a 24 GB card can't hold but this box can.
-# Big total params (capacity) + small active params (bandwidth) = the Strix Halo sweet spot.
-[[models]]
-name = "Qwen3-235B-A22B"
-path = "/home/engineer/models/Qwen3-235B-A22B-Q4_K_M.gguf"
-quant = "Q4_K_M"
+name = "gemma-4-26B-A4B-heretic"
+path = "/home/ai/models/gemma-4-26B-A4B-it-heretic-Q4-GGUF/REPLACE-ME.gguf"
+quant = "Q4"
 is_moe = true
-n_ctx = 8192
+
+[[models]]
+name = "Qwen3.6-27B"
+path = "/home/ai/models/Qwen3.6-27B-Q4-GGUF/REPLACE-ME.gguf"
+quant = "Q4"
+
+[[models]]
+name = "Qwen3.6-27B"
+path = "/home/ai/models/Qwen3.6-27B-Q8-GGUF/REPLACE-ME.gguf"
+quant = "Q8_0"
+
+[[models]]
+name = "GLM-4.7-Flash"
+path = "/home/ai/models/GLM-4.7-Flash-Q8_0/REPLACE-ME.gguf"
+quant = "Q8_0"
+
+# --- ollama: same models by tag, for a head-to-head against llama.cpp ----------
+# Fill tags from `ollama list`. Same name = grouped next to the llama.cpp row in the report.
+[[models]]
+name = "Qwen3.6-27B"
+engine = "ollama"
+tag = "qwen3:30b"        # <- replace with your real `ollama list` tag
+quant = "Q4_K_M"

@@ -69,24 +69,34 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("config has no [[models]] entries.", file=sys.stderr)
         return 2
 
-    engine_name = cfg.get("engine", "llama.cpp")
-    runner_cls = RUNNERS.get(engine_name)
-    if runner_cls is None:
-        print(f"unknown engine '{engine_name}'. known: {list(RUNNERS)}", file=sys.stderr)
-        return 2
-    runner = runner_cls(**cfg.get("engine_opts", {}))
-    if not runner.available():
-        print(f"engine '{engine_name}' binary not on PATH.", file=sys.stderr)
-        return 2
+    default_engine = cfg.get("engine", "llama.cpp")
+    runner_opts = cfg.get("runners", {})  # per-engine options, e.g. [runners.ollama]
+    runners: dict[str, object] = {}       # cache one instance per engine
+
+    def get_runner(engine_name: str):
+        if engine_name in runners:
+            return runners[engine_name]
+        cls = RUNNERS.get(engine_name)
+        if cls is None:
+            raise ValueError(f"unknown engine '{engine_name}'. known: {list(RUNNERS)}")
+        inst = cls(**runner_opts.get(engine_name, {}))
+        if not inst.available():
+            raise RuntimeError(f"engine '{engine_name}' not available "
+                               f"(binary missing or server down)")
+        runners[engine_name] = inst
+        return inst
 
     ts = _now_iso()
     all_results = []
     for i, model in enumerate(models, 1):
-        name = model.get("name") or model.get("path", "?")
-        print(f"[{i}/{len(models)}] benchmarking {name} ...", file=sys.stderr)
+        engine_name = model.get("engine", default_engine)
+        name = model.get("name") or model.get("path") or model.get("tag", "?")
+        print(f"[{i}/{len(models)}] [{engine_name}] benchmarking {name} ...",
+              file=sys.stderr)
         try:
+            runner = get_runner(engine_name)
             results = runner.run_model(model, defaults, fp.id, _now_iso())
-        except Exception as e:  # one bad model shouldn't sink the whole run
+        except Exception as e:  # one bad model/engine shouldn't sink the whole run
             print(f"    FAILED: {e}", file=sys.stderr)
             continue
         for r in results:
