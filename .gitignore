@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Local config can point at machine-specific model paths
+configs/models.toml
+
+# Keep curated results, ignore scratch runs
+results/scratch/

@@ -1,0 +1,17 @@
+[project]
+name = "strixbench"
+version = "0.1.0"
+description = "Reproducible LLM inference benchmark + config DB for AMD Strix Halo (gfx1151)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []  # stdlib only by design — keep it trivial to run on the box
+
+[project.scripts]
+strixbench = "strixbench.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["strixbench", "strixbench.runners"]

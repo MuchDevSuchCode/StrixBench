@@ -1,0 +1,43 @@
+# StrixBench model config. Copy to configs/models.toml and edit paths.
+#
+#   cp configs/models.example.toml configs/models.toml
+#   python -m strixbench run --config configs/models.toml
+
+engine = "llama.cpp"
+
+# Optional: point at a specific llama-bench binary (otherwise found on PATH).
+# [engine_opts]
+# binary = "/home/engineer/llama.cpp/build/bin/llama-bench"
+
+# Applied to every model unless overridden per-model.
+[defaults]
+backend = "vulkan"     # label only; build llama.cpp with the backend you want to test
+n_ctx = 4096
+n_prompt = 512         # prefill tokens to time
+n_gen = 128            # decode tokens to time
+n_gpu_layers = 999     # offload everything to the iGPU (unified mem makes this cheap)
+n_batch = 2048
+reps = 3
+
+# --- Models to benchmark -------------------------------------------------------
+# Add one [[models]] block per GGUF. The headline test for this box is a big MoE.
+
+[[models]]
+name = "Llama-3.1-8B-Instruct"
+path = "/home/engineer/models/Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+quant = "Q4_K_M"
+
+# Dense 70B — fits easily in 128 GB; expect ~6 tok/s decode (bandwidth bound).
+[[models]]
+name = "Llama-3.3-70B-Instruct"
+path = "/home/engineer/models/Llama-3.3-70B-Instruct-Q4_K_M.gguf"
+quant = "Q4_K_M"
+
+# The headliner: a big MoE that a 24 GB card can't hold but this box can.
+# Big total params (capacity) + small active params (bandwidth) = the Strix Halo sweet spot.
+[[models]]
+name = "Qwen3-235B-A22B"
+path = "/home/engineer/models/Qwen3-235B-A22B-Q4_K_M.gguf"
+quant = "Q4_K_M"
+is_moe = true
+n_ctx = 8192
