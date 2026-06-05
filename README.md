@@ -52,10 +52,12 @@ The catch is software: ROCm on `gfx1151` is young, Vulkan-vs-ROCm performance is
 the NPU sits idle on Linux, and there's no agreed-upon set of launch flags. **StrixBench
 turns that guesswork into measured, shareable data.**
 
-> **Memory note:** the pool is **128 GB physical and unified**. The OS sees only a slice
-> as system RAM (e.g. ~31 GB) while the GPU can address up to ~128 GB via GTT/VRAM — these
-> *overlap the same physical memory*, so StrixBench reports the **max** pool as capacity,
-> never RAM + VRAM (that would double-count).
+> **Memory note:** the pool is **128 GB physical and unified**, but how it's split depends
+> on BIOS mode. With a *dedicated carveout* (e.g. 96 GB reserved as GPU VRAM + ~32 GB system
+> RAM) the regions are disjoint, so capacity = VRAM + RAM. In *shared/UMA* mode the GPU
+> borrows system RAM via GTT and the regions overlap. StrixBench detects which mode you're
+> in and reports `unified_total_gb` (total physical) plus `gpu_addressable_gb` (VRAM + GTT,
+> i.e. what the GPU can actually map). See [Output & data format](#output--data-format).
 
 ---
 
@@ -189,7 +191,17 @@ Everything lands in `results/`:
 
 **Fingerprint fields:** `host, os, kernel, cpu_model, cpu_cores, gpu_name, gfx_target,
 rocm_version, mesa_radv_version, amdgpu_driver, mem_total_gb, gtt_total_gb, vram_total_gb,
-unified_total_gb, npu_present, bios_version, fingerprint_id`.
+gpu_addressable_gb, unified_total_gb, npu_present, bios_version, fingerprint_id`.
+
+> **Memory fields explained (Strix Halo runs two modes):**
+> - *Dedicated carveout* (BIOS UMA split, e.g. 96 GB VRAM + 32 GB system): the VRAM
+>   region is reserved for the GPU and hidden from the OS, so `unified_total_gb` =
+>   VRAM + system RAM (~128 GB) and `gpu_addressable_gb` = VRAM + GTT.
+> - *Shared/UMA*: a tiny VRAM stub; the GPU borrows system RAM via a large GTT, so
+>   `unified_total_gb` = system RAM (the pools overlap).
+>
+> `unified_total_gb` is exact when `info` is run with `sudo` (reads `dmidecode`);
+> otherwise it's derived from the pools as above.
 
 **Result record fields (per model × engine):** `engine, engine_backend, engine_build,
 model_name, model_quant, model_size_gb, model_n_params, is_moe, n_gpu_layers, n_threads,
@@ -233,9 +245,10 @@ StrixBench scans `/sys/class/drm/card*/device/mem_info_*` and falls back to
 `rocm-smi --showmeminfo vram --json`. If both are empty, check
 `ls /sys/class/drm/card*/device/ | grep mem_info` and confirm `rocm-smi` works.
 
-**`unified_total_gb` looks low / you want the exact installed size.**
-The no-root value is the largest visible pool (a safe lower bound). For the precise
-installed total, run `info` with `sudo` so `dmidecode -t memory` is readable.
+**`unified_total_gb` looks off / you want the exact installed size.**
+Without root it's derived from the pools (carveout: VRAM + RAM; UMA: RAM). For the precise
+installed total, run `info` with `sudo` so `dmidecode -t memory` is readable. Note `dmidecode`
+and `modinfo` live in `/usr/sbin`; StrixBench resolves them there even when it's off your PATH.
 
 **`gpu_name` is empty.**
 It's parsed from `rocminfo` ("Marketing Name"). Ensure `rocminfo` runs without sudo and

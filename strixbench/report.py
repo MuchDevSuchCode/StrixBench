@@ -54,7 +54,8 @@ def render(results_dir: Path) -> str:
                 f"- **`{fid}`** — {fp.get('gpu_name') or '?'} ({fp.get('gfx_target','?')}), "
                 f"kernel {fp.get('kernel','?')}, ROCm {fp.get('rocm_version') or '—'}, "
                 f"{fp.get('mesa_radv_version') or 'RADV ?'}, "
-                f"{_fmt(fp.get('unified_total_gb'),' GB')} unified"
+                f"{_fmt(fp.get('unified_total_gb'),' GB')} unified "
+                f"({_fmt(fp.get('gpu_addressable_gb'),' GB')} GPU-addressable)"
             )
         lines.append("")
 

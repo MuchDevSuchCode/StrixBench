@@ -29,10 +29,11 @@ class Fingerprint:
     rocm_version: str = ""
     mesa_radv_version: str = ""    # Vulkan backend version
     amdgpu_driver: str = ""
-    mem_total_gb: float | None = None       # system RAM the OS sees (a slice of the pool)
-    gtt_total_gb: float | None = None        # GTT: how much of the pool the GPU can address
-    vram_total_gb: float | None = None       # GPU "VRAM" ceiling (overlaps the same pool)
-    unified_total_gb: float | None = None    # physical unified capacity (pools overlap, so max — not sum)
+    mem_total_gb: float | None = None        # system RAM the OS sees
+    gtt_total_gb: float | None = None         # GTT: system RAM the GPU may borrow (subset of mem)
+    vram_total_gb: float | None = None        # dedicated GPU carveout (BIOS UMA split), hidden from OS
+    gpu_addressable_gb: float | None = None   # what the GPU can map: VRAM carveout + GTT
+    unified_total_gb: float | None = None     # total physical memory installed
     npu_present: bool = False
     bios_version: str = ""
     extra: dict = field(default_factory=dict)
@@ -167,15 +168,38 @@ def _dmidecode_total_gb() -> float | None:
     return round(total_mb / 1024, 1) if total_mb else None
 
 
+def _capacity(mem: float | None, gtt: float | None,
+              vram: float | None) -> tuple[float | None, float | None]:
+    """Derive (total_physical_gb, gpu_addressable_gb) from the raw pools.
+
+    Strix Halo runs in one of two memory modes:
+      - UMA / shared: tiny VRAM stub, GPU borrows system RAM via a large GTT.
+        VRAM overlaps system RAM, so physical == system RAM.
+      - Dedicated carveout (BIOS UMA split): a big VRAM region is reserved for
+        the GPU and HIDDEN from the OS. It does NOT overlap system RAM, so
+        physical == VRAM carveout + system RAM (what the OS sees).
+    A VRAM region larger than a few GB indicates a real carveout.
+    The GPU can map its dedicated VRAM plus whatever it borrows via GTT.
+    """
+    addressable = round((vram or 0) + (gtt or 0), 1) or None
+
+    dmi = _dmidecode_total_gb()  # exact installed total, if root
+    if dmi:
+        return dmi, addressable
+
+    carveout = bool(vram and vram > 4)  # >4 GB ⇒ dedicated carveout, disjoint from RAM
+    if carveout and mem:
+        return round(vram + mem, 1), addressable
+    if mem:                              # UMA: system RAM is the whole pool
+        return mem, addressable
+    return (vram or None), addressable
+
+
 def collect() -> Fingerprint:
     cpu_model, cpu_cores = _cpu()
     gtt, vram = _gtt_vram_gb()
     mem = _mem_total_gb()
-    # System RAM, GTT, and VRAM all draw from ONE physical pool — they overlap.
-    # The real capacity is the largest pool, not their sum (dmidecode gives the exact
-    # installed total when run as root; max() is the honest no-root proxy).
-    pools = [p for p in (mem, gtt, vram, _dmidecode_total_gb()) if p]
-    unified = max(pools) if pools else None
+    unified, addressable = _capacity(mem, gtt, vram)
     return Fingerprint(
         host=platform.node(),
         os=read_text("/etc/os-release") and _pretty_os() or platform.platform(),
@@ -190,6 +214,7 @@ def collect() -> Fingerprint:
         mem_total_gb=mem,
         gtt_total_gb=gtt,
         vram_total_gb=vram,
+        gpu_addressable_gb=addressable,
         unified_total_gb=unified,
         npu_present=_npu_present(),
         bios_version=_bios_version(),
