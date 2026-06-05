@@ -108,11 +108,19 @@ def _radv_version() -> str:
 
 
 def _amdgpu_driver() -> str:
-    ver = read_text("/sys/module/amdgpu/version")
+    # The in-tree amdgpu sets no MODULE_VERSION, so version nodes are usually blank.
+    ver = read_text("/sys/module/amdgpu/version") or run(
+        ["modinfo", "-F", "version", "amdgpu"])
     if ver:
         return ver
-    # amdgpu is often built-in (no /sys/module/.../version); ask modinfo.
-    return run(["modinfo", "-F", "version", "amdgpu"]) or ""
+    # No version string ⇒ distinguish the AMD DKMS package from the kernel's in-tree driver
+    # (the meaningful difference for ROCm reproducibility).
+    dkms = run(["dkms", "status"]) or ""
+    m = re.search(r"amdgpu[/,\s-]+([0-9][\w.\-]+)", dkms)
+    if m:
+        return f"dkms {m.group(1)}"
+    loaded = read_text("/sys/module/amdgpu/srcversion") or "amdgpu" in (run(["lsmod"]) or "")
+    return "in-tree" if loaded else ""
 
 
 def _gtt_vram_gb() -> tuple[float | None, float | None]:
