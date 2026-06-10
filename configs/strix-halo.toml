@@ -32,8 +32,12 @@ tag = "gemma-4-26b-a4b-it-heretic-q4-gguf:latest"
 quant = "Q4_K_M"
 is_moe = true
 
-# gemma-4-12B-it QAT (dense 12B) — a dense counterpoint to the 26B MoE.
-# TODO: path filled once `find ~/models/gemma-4-12B-it-qat-GGUF -name '*.gguf'` is known.
+# gemma-4-12B-it QAT (dense 12B, Q4_K_XL) — a dense counterpoint to the 26B MoE.
+# (Dir also has a Q8_0 MTP variant; add it separately if you want to test MTP.)
+[[models]]
+name = "gemma-4-12B-it-qat"
+path = "/home/ai/models/gemma-4-12B-it-qat-GGUF/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf"
+quant = "Q4_K_XL"
 
 # GLM-4.7-Flash Q8 — ROCm vs Ollama
 [[models]]
