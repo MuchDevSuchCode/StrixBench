@@ -1,0 +1,68 @@
+# Tracked benchmark config for the strix-halo box (gfx1151, ROCm 7.2.0).
+# Tracked (unlike configs/models.toml) so edits reach the box via `git pull`.
+# Run: python3 -m strixbench run --config configs/strix-halo.toml
+
+engine = "llama.cpp"
+
+[runners."llama.cpp"]
+binary = "/home/ai/llama.cpp/build/bin/llama-bench"
+
+[runners.ollama]
+host = "http://127.0.0.1:11434"
+
+[defaults]
+backend = "rocm"
+n_ctx = 4096
+n_prompt = 512
+n_gen = 128
+n_gpu_layers = 999
+n_batch = 2048
+reps = 3
+
+# gemma-4-26B-A4B MoE (26B total / ~4B active) — ROCm vs Ollama
+[[models]]
+name = "gemma-4-26B-A4B-heretic"
+path = "/home/ai/models/gemma-4-26B-A4B-it-heretic-Q4-GGUF/gemma-4-26B-A4B-it-heretic.Q4_K_M.gguf"
+quant = "Q4_K_M"
+is_moe = true
+[[models]]
+name = "gemma-4-26B-A4B-heretic"
+engine = "ollama"
+tag = "gemma-4-26b-a4b-it-heretic-q4-gguf:latest"
+quant = "Q4_K_M"
+is_moe = true
+
+# gemma-4-12B-it QAT (dense 12B) — a dense counterpoint to the 26B MoE.
+# TODO: path filled once `find ~/models/gemma-4-12B-it-qat-GGUF -name '*.gguf'` is known.
+
+# GLM-4.7-Flash Q8 — ROCm vs Ollama
+[[models]]
+name = "GLM-4.7-Flash"
+path = "/home/ai/models/GLM-4.7-Flash-Q8_0/GLM-4.7-Flash-Q8_0.gguf"
+quant = "Q8_0"
+[[models]]
+name = "GLM-4.7-Flash"
+engine = "ollama"
+tag = "glm-4.7-flash-q8_0:latest"
+quant = "Q8_0"
+
+# GLM-4.7-Flash abliterated Q8 — ROCm vs Ollama
+[[models]]
+name = "GLM-4.7-Flash-abliterated"
+path = "/home/ai/models/Huihui-GLM-4.7-Flash-abliterated-Q8-GGUF/Huihui-GLM-4.7-Flash-abliterated.Q8_0.gguf"
+quant = "Q8_0"
+[[models]]
+name = "GLM-4.7-Flash-abliterated"
+engine = "ollama"
+tag = "glm-4.7-flash-abliterated:latest"
+quant = "Q8_0"
+
+# Qwen3.6-27B — Q4 vs Q8 quant comparison (llama.cpp-ROCm)
+[[models]]
+name = "Qwen3.6-27B"
+path = "/home/ai/models/Qwen3.6-27B-Q4-GGUF/Qwen3.6-27B-Q4_K_M.gguf"
+quant = "Q4_K_M"
+[[models]]
+name = "Qwen3.6-27B"
+path = "/home/ai/models/Qwen3.6-27B-Q8-GGUF/Qwen3.6-27B-Q8_0.gguf"
+quant = "Q8_0"
